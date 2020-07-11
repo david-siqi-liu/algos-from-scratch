@@ -11,7 +11,7 @@ class TreeNode:
     """
 
     def __init__(self, depth: int = None, node_type: str = None, impurity: float = None, feature_i: int = None,
-                 feature_type: str = None, feature_val: Any = None, majority_class: Any = None,
+                 feature_type: str = None, feature_val: Any = None, n_obs: int = None, majority_class: Any = None,
                  left_node: 'TreeNode' = None, right_node: 'TreeNode' = None):
         self.depth = depth
         self.node_type = node_type  # Either 'internal' or 'leaf'
@@ -19,15 +19,18 @@ class TreeNode:
         self.feature_i = feature_i  # Not applicable to leaf nodes
         self.feature_type = feature_type  # Not applicable to leaf nodes. Either 'categorical' or 'numerical'
         self.feature_val = feature_val  # Not applicable to leaf nodes
+        self.n_obs = n_obs
         self.majority_class = majority_class
         self.left_node = left_node  # Not applicable to leaf nodes
         self.right_node = right_node  # Not applicable to leaf nodes
 
     def __str__(self):
         return "<TreeNode>: depth = {depth}, node_type = {node_type}, impurity = {impurity}, feature = {feature}," \
-               "feature_type = {feature_type}, feature_val = {feature_val}, majority_class = {majority_class}".format(
+               "feature_type = {feature_type}, feature_val = {feature_val}, n_obs = {n_obs}, " \
+               "majority_class = {majority_class}".format(
             depth=self.depth, node_type=self.node_type, impurity=self.impurity, feature=self.feature_i,
-            feature_type=self.feature_type, feature_val=self.feature_val, majority_class=self.majority_class
+            feature_type=self.feature_type, feature_val=self.feature_val, n_obs=self.n_obs,
+            majority_class=self.majority_class
         )
 
 
@@ -41,7 +44,7 @@ def export_text(node: TreeNode, feature_names: List[str]) -> str:
     prefix = "|   " * (node.depth - 1) + "|--- "
     if node.node_type == 'leaf':
         return_str += prefix
-        return_str += "class: {0}\n".format(node.majority_class)
+        return_str += "n_obs: {0} class: {1}\n".format(node.n_obs, node.majority_class)
     elif node.node_type == 'internal':
         separators = ('==', '!=') if node.feature_type == 'categorical' else ('<=', '>')
         return_str += prefix

@@ -1,9 +1,12 @@
 import operator
+from collections import namedtuple
 from typing import Any
 
 import numpy as np
 
 from algosfromscratch.utils.tree import TreeNode, calculate_impurity, get_unique_values, get_majority_class
+
+Split = namedtuple('Split', ('feature', 'val', 'X1', 'X2', 'y1', 'y2'))
 
 
 class DecisionTreeClassifier:
@@ -12,17 +15,24 @@ class DecisionTreeClassifier:
     """
 
     def __init__(self, criterion: str = 'gini', max_depth: int = None, min_samples_split: int = 2,
-                 min_impurity_decrease: float = 0.0):
+                 min_impurity_decrease: float = 0.0, random_state: Any = None):
         self.criterion = criterion
         self.max_depth = max_depth if max_depth else float('inf')
         self.min_samples_split = min_samples_split
         self.min_impurity_decrease = min_impurity_decrease
+        if not random_state:
+            self.random_instance = np.random.mtrand._rand
+        elif isinstance(random_state, int):
+            self.random_instance = np.random.RandomState(random_state)
+        elif isinstance(random_state, np.random.RandomState):
+            self.random_instance = random_state
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         """
         Build a decision tree classifier from the training set (X, y).
         """
-        self.n_samples_total = X.shape[0]
+        self.n_samples_, self.n_features_ = X.shape
+        self.n_classes_ = len(np.unique(y))
         # Prepare the features
         self._prepare_features(X)
         # Call the recursive function to build tree
@@ -48,7 +58,7 @@ class DecisionTreeClassifier:
         """
         Recursively builds each node in the tree.
         """
-        n_samples, n_features = X.shape
+        n_samples = X.shape[0]
         # Calculate current impurity using the given criterion
         current_impurity = calculate_impurity(y, self.criterion)
         # Calculate current majority class
@@ -56,6 +66,7 @@ class DecisionTreeClassifier:
         # Initialize return TreeNode
         current_node = TreeNode(depth=depth,
                                 impurity=current_impurity,
+                                n_obs=n_samples,
                                 majority_class=current_majority_class)
         # Stop here (i.e., make current node a leaf) if
         #   - Exceeds maximum depth
@@ -66,10 +77,9 @@ class DecisionTreeClassifier:
             current_node.node_type = 'leaf'
             return current_node
         # Initialize trackers
-        feature_best, val_best, impurity_best = None, None, float('inf')
-        X1_best, X2_best, y1_best, y2_best = None, None, None, None
+        feature_best_candidates, impurity_best = [], float('inf')
         # Iterate through each feature
-        for feature_i in range(n_features):
+        for feature_i in range(self.n_features_):
             # All unique, non-NULL values
             unique_feature_values = get_unique_values(X[:, feature_i])
             # If numerical, find mid-points
@@ -88,28 +98,33 @@ class DecisionTreeClassifier:
                 # Calculate combined impurity
                 impurity_after_split = (len(y1) / n_samples) * calculate_impurity(y1, self.criterion) + \
                                        (len(y2) / n_samples) * calculate_impurity(y2, self.criterion)
-                # Check if it's better (i.e., lower) than the current best impurity
+                # Check if it's better than (or equals to) the current best impurity
                 if impurity_after_split < impurity_best:
-                    feature_best, val_best, impurity_best = feature_i, val, impurity_after_split
-                    X1_best, X2_best, y1_best, y2_best = X1, X2, y1, y2
+                    feature_best_candidates = [Split(feature_i, val, X1, X2, y1, y2)]
+                    impurity_best = impurity_after_split
+                elif impurity_after_split == impurity_best:
+                    feature_best_candidates.append(Split(feature_i, val, X1, X2, y1, y2))
         # Calculate weighted impurity decrease (i.e., information gain)
-        weighted_impurity_decrease = (n_samples / self.n_samples_total) * (current_impurity - impurity_best)
+        weighted_impurity_decrease = (n_samples / self.n_samples_) * (current_impurity - impurity_best)
         # If information gain is below the threshold, make current node a leaf and stop
         if (weighted_impurity_decrease == 0) or (weighted_impurity_decrease < self.min_impurity_decrease):
             current_node.node_type = 'leaf'
         # Make current node an internal node and continue expanding left and right
         else:
+            # Randomly select one feature among those with equal impurity decrease
+            feature_split = feature_best_candidates[self.random_instance.randint(len(feature_best_candidates))]
+            # Update current node
             current_node.node_type = 'internal'
-            current_node.feature_i = feature_best
-            current_node.feature_type = self.feature_types[feature_best]
-            current_node.feature_val = val_best
+            current_node.feature_i = feature_split.feature
+            current_node.feature_type = self.feature_types[feature_split.feature]
+            current_node.feature_val = feature_split.val
             # Recursively build left and right trees
-            current_node.left_node = self._build_tree(X1_best, y1_best, depth + 1)
-            current_node.right_node = self._build_tree(X2_best, y2_best, depth + 1)
+            current_node.left_node = self._build_tree(feature_split.X1, feature_split.y1, depth + 1)
+            current_node.right_node = self._build_tree(feature_split.X2, feature_split.y2, depth + 1)
         # Return TreeNode
         return current_node
 
-    def _classify(self, x: np.ndarray, node: TreeNode) -> Any:
+    def classify(self, x: np.ndarray, node: TreeNode) -> Any:
         """
         Classifies a single sample x.
         """
@@ -117,9 +132,9 @@ class DecisionTreeClassifier:
             return node.majority_class
         op = operator.eq if node.feature_type == 'categorical' else operator.le
         if op(x[node.feature_i], node.feature_val):
-            return self._classify(x, node.left_node)
+            return self.classify(x, node.left_node)
         else:
-            return self._classify(x, node.right_node)
+            return self.classify(x, node.right_node)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
@@ -127,4 +142,4 @@ class DecisionTreeClassifier:
         """
         if not self.root:
             raise SystemError('Tree has not been fitted yet.')
-        return np.array([self._classify(x, self.root) for x in X])
+        return np.array([self.classify(x, self.root) for x in X])
