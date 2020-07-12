@@ -4,3 +4,4 @@ from .regression import LinearRegression
 from .regression import LogisticRegression
 from .decision_tree import DecisionTreeClassifier
 from .random_forest import RandomForestClassifier
+from .adaboost import AdaBoostClassifier
